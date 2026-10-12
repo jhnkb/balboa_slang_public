@@ -1,0 +1,49 @@
+{
+  "resolution": [600, 600],
+  "background": [0.7, 0.9, 1.0],
+  "objects": [
+    {
+      "type": "polyline",
+      "points": [300, 150, 300, 430],
+      "closed": false,
+      "stroke_rgba": [0.15, 0.15, 0.2, 1.0],
+      "stroke_width": 5
+    },
+    {
+      "type": "polyline",
+      "points": [190, 300, 410, 300],
+      "closed": false,
+      "stroke_rgba": [0.15, 0.15, 0.2, 1.0],
+      "stroke_width": 5
+    },
+    {
+      "type": "triangle",
+      "p0": [275, 100],
+      "p1": [300, 120],
+      "p2": [300, 80],
+      "fill_rgba": [1.0, 0.3, 0.3, 1.0]
+    },
+    {
+      "type": "triangle",
+      "p0": [325, 100],
+      "p1": [300, 120],
+      "p2": [300, 80],
+      "fill_rgba": [1.0, 0.3, 0.3, 1.0]
+    },
+    {
+      "type": "polyline",
+      "points": [300, 430, 410, 300, 300, 150, 190, 300],
+      "closed": true,
+      "fill_rgba": [0.95, 0.65, 0.15, 1.0],
+      "stroke_rgba": [0.2, 0.15, 0.1, 1.0],
+      "stroke_width": 6
+    },
+    {
+      "type": "polyline",
+      "points": [300, 150, 320, 110, 290, 65, 310, 20],
+      "closed": false,
+      "stroke_rgba": [0.2, 0.15, 0.1, 1.0],
+      "stroke_width": 5
+    }
+  ]
+}

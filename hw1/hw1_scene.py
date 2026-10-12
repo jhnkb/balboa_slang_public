@@ -190,13 +190,154 @@ def compose_transformation(transforms):
     F = np.eye(3, dtype=np.float32)
 
     for transform in transforms:
-        pass
-        # TODO: your code here
+        if "scale" in transform:
+            scale_val = transform["scale"]
 
+            scale_x = scale_val[0]
+            scale_y = scale_val[1]
+
+            S = np.array([[scale_x, 0, 0],
+                         [0, scale_y, 0],
+                         [0, 0, 1]], dtype=float)
+
+            F = S @ F
+        elif "rotate" in transform:
+            rotation_vals = transform["rotate"]
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[cos, -sin, 0],
+                         [sin, cos, 0],
+                         [0, 0, 1]], dtype= float)
+
+            F = R @ F
+
+        elif "shear_x" in transform:
+            shear_val = transform["shear_x"][0]
+
+            S_X = np.array([[1, shear_val, 0],
+                            [0, 1, 0],
+                            [0, 0, 1]], dtype = float)
+
+            F = S_X @ F
+
+        elif "shear_y" in transform:
+                    shear_val = transform["shear_y"][0]
+        
+                    S_X = np.array([[1, 0, 0],
+                                    [shear_val, 1, 0],
+                                    [0, 0, 1]], dtype = float)
+        
+                    F = S_X @ F
+
+        elif "translate" in transform:
+            t_vals = transform["translate"]
+
+            t_x = t_vals[0]
+            t_y = t_vals[1]
+
+            T = np.array([[1,0,t_x],
+                         [0,1,t_y],
+                         [0,0,1]],dtype=float)
+
+            F = T @ F
     return F
 
 def interpolate_transformation(transform_keyframes, t):
-    # TODO: your code here
+
+    t_leftneighbor = float("-inf")
+    t_rightneighbor = float("inf")
+
+    leftneighbor = None
+    rightneighbor = None
+
+    for keyframe in transform_keyframes:
+        t_keyframe = keyframe["time"]
+
+        if t_keyframe <= t and t_leftneighbor < t_keyframe:
+            t_leftneighbor = t_keyframe
+            leftneighbor = keyframe
+        if t_keyframe >= t and t_rightneighbor > t_keyframe:
+            t_rightneighbor = t_keyframe
+            rightneighbor = keyframe
+
+    if t_leftneighbor == t_rightneighbor:
+        return rightneighbor["transform"]
+
+    t_0 = t_leftneighbor
+    t_1 = t_rightneighbor
+    w = (t-t_0)/(t_1-t_0)
+    new_transforms = list()
+
+    #gets a list of dictionaries
+    left_transform = leftneighbor["transform"]
+    right_transform = rightneighbor["transform"]
+
+    #go through the list of dictionaries one by one at the same time
+    for left_item, right_item in zip(left_transform, right_transform):
+        new_transform = dict()
+
+        ##### SCALING #####
+        if "scale" in left_item and "scale" in right_item:
+            
+            left_scale_vals = np.array(left_item["scale"])
+            right_scale_vals = np.array(right_item["scale"])
+
+            new_scale = (1-w)*left_scale_vals + w*right_scale_vals
+            new_scale = new_scale.tolist()
+
+            new_transform["scale"] = new_scale
+
+        ##### TRANSLATION #####
+        elif "translate" in left_item and "translate" in right_item:
+            left_translate_vals = np.array(left_item["translate"])
+            right_translate_vals = np.array(right_item["translate"])
+
+            new_translate = (1-w)*left_translate_vals + w*right_translate_vals
+            new_translate = new_translate.tolist()
+
+            new_transform["translate"] = new_translate
+
+        ##### ROTATE #####
+        elif "rotate" in left_item and "rotate" in right_item:
+            left_rotate_val_degree = left_item["rotate"][0]
+            right_rotate_val_degree = right_item["rotate"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate"] = rotations
+
+        ##### SHEAR X #####
+        elif "shear_x" in left_item and "shear_x" in right_item:
+            left_shear_val = left_item["shear_x"][0]
+            right_shear_val = right_item["shear_x"][0]
+
+            shear_list = []
+            new_shear_x = (1-w)*left_shear_val + w*right_shear_val
+            shear_list.append(new_shear_x)
+
+            new_transform["shear_x"] = shear_list
+
+        ##### SHEAR y #####
+        elif "shear_y" in left_item and "shear_y" in right_item:
+            left_shear_val = left_item["shear_y"][0]
+            right_shear_val = right_item["shear_y"][0]
+
+            shear_list = []
+            new_shear_y = (1-w)*left_shear_val + w*right_shear_val
+            shear_list.append(new_shear_y)
+
+            new_transform["shear_y"] = shear_list
+
+        if new_transform:
+            new_transforms.append(new_transform)
+
+    return new_transforms
 
     # Should never happen?
     assert False
