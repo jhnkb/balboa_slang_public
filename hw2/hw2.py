@@ -20,15 +20,40 @@ def hw2_1(args):
     def to_screen(p):
         # HW2.1: implement this
         # access "s" using args.s
-        return (0.0, 0.0)
+
+        # p is camera space
+        x = p[0]
+        y = p[1]
+        z = p[2]
+
+        # p --> projected plane space by perspective proj.
+        projected_x = x/(-z)
+        projected_y = y/(-z)
+
+        # projected image plane space --> screen space
+        screen_x = img.width * ((projected_x + (args.s * a))/(2.0 * args.s * a))
+        screen_y = img.height * ((args.s - projected_y)/(2.0 * args.s))
+
+        return (screen_x, screen_y)
 
     sp0 = to_screen(args.p0)
     sp1 = to_screen(args.p1)
     sp2 = to_screen(args.p2)
 
     # HW2.1: implement this
-    aabb_min = (0, 0)
-    aabb_max = (10, 10)
+
+    # get all the x's
+    x_list = [sp0[0],sp1[0],sp2[0]]
+    y_list = [sp0[1],sp1[1],sp2[1]]
+
+    x_min = min(x_list)
+    x_max = max(x_list)
+
+    y_min = min(y_list)
+    y_max = max(y_list)
+
+    aabb_min = (x_min, y_min)
+    aabb_max = (x_max, y_max)
 
     vars = {'sp0': sp0,
             'sp1': sp1,
