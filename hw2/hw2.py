@@ -46,11 +46,27 @@ def hw2_1(args):
     x_list = [sp0[0],sp1[0],sp2[0]]
     y_list = [sp0[1],sp1[1],sp2[1]]
 
-    x_min = min(x_list)
-    x_max = max(x_list)
+    # floats --> ints
+    x_min = math.floor(min(x_list))
+    x_max = math.ceil(max(x_list))
 
-    y_min = min(y_list)
-    y_max = max(y_list)
+    y_min = math.floor(min(y_list))
+    y_max = math.ceil(max(y_list))
+
+    # make sure the proj. image plane space coords
+    # do not cross the screen space/image dimensions
+    # if they do, set the min and max to 0 and max (img) dims
+    if x_min < 0:
+        x_min = 0
+
+    if y_min < 0:
+        y_min = 0
+
+    if x_max >= img.width:
+        x_max = img.width - 1 #compensate for 0 indexing
+
+    if y_max >= img.height:
+        y_max = img.height - 1 #compensate for 0 indexing
 
     aabb_min = (x_min, y_min)
     aabb_max = (x_max, y_max)
@@ -104,7 +120,20 @@ def hw2_2(args):
 
     def to_screen(p):
         # HW2.2: implement this (basically the same as HW2.1)
-        return (0.0, 0.0)
+        # p is camera space
+        x = p[0]
+        y = p[1]
+        z = p[2]
+
+        # p --> projected plane space by perspective proj.
+        projected_x = x/(-z)
+        projected_y = y/(-z)
+
+        # projected image plane space --> screen space
+        screen_x = args.width * ((projected_x + (args.s * a))/(2.0 * args.s * a))
+        screen_y = args.height * ((args.s - projected_y)/(2.0 * args.s))
+
+        return (screen_x, screen_y)
 
     # splat the triangles onto the screen
     screen_vertices = [to_screen(mesh.vertices[vid, :]) for vid in range(mesh.vertices.shape[0])]
@@ -129,6 +158,53 @@ def hw2_2(args):
             # aabb_min & aabb_max like in 2.1
             # c0, c1, c2 from mesh.vertex_colors
             # use mesh.faces[tri_id] to obtain the vertex indices
+
+            vertex_indices = mesh.faces[tri_id]
+
+            sp0 = screen_vertices[vertex_indices[0]]
+            sp1 = screen_vertices[vertex_indices[1]]
+            sp2 = screen_vertices[vertex_indices[2]]
+
+            z0 = mesh.vertices[vertex_indices[0]][2]
+            z1 = mesh.vertices[vertex_indices[1]][2]
+            z2 = mesh.vertices[vertex_indices[2]][2]
+
+            inv_depth0 = 1 / -z0
+            inv_depth1 = 1 / -z1
+            inv_depth2 = 1 / -z2
+
+            c0 = mesh.vertex_colors[vertex_indices[0]]
+            c1 = mesh.vertex_colors[vertex_indices[1]]
+            c2 = mesh.vertex_colors[vertex_indices[2]]
+
+            # get all the x's
+            x_list = [sp0[0],sp1[0],sp2[0]]
+            y_list = [sp0[1],sp1[1],sp2[1]]
+        
+            # floats --> ints
+            x_min = math.floor(min(x_list))
+            x_max = math.ceil(max(x_list))
+        
+            y_min = math.floor(min(y_list))
+            y_max = math.ceil(max(y_list))
+        
+            # make sure the proj. image plane space coords
+            # do not cross the screen space/image dimensions
+            # if they do, set the min and max to 0 and max (img) dims
+            if x_min < 0:
+                x_min = 0
+        
+            if y_min < 0:
+                y_min = 0
+        
+            if x_max >= args.width:
+                x_max = args.width - 1 #compensate for 0 indexing
+        
+            if y_max >= args.height:
+                y_max = args.height - 1 #compensate for 0 indexing
+
+            aabb_min = [x_min, y_min]
+            aabb_max = [x_max, y_max]
 
             if aabb_min[0] > aabb_max[0] or aabb_min[1] > aabb_max[1]:
                 continue
