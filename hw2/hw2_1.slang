@@ -38,9 +38,7 @@ void compute_main(uint2 tid : SV_DispatchThreadID,
     if ((E01 >= 0 && E12 >= 0 && E20 >= 0) || 
     (E01 <= 0 && E12 <= 0 && E20 <= 0)){
         
-        // calculate depth of pixel
-
+        image[ipixel] = float4(color, 1.0);
         
     } 
-    
 }
