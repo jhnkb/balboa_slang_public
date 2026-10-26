@@ -855,6 +855,7 @@ def hw2_5(args):
             camera_transforms = interpolate_transformation(camera.transform_keyframes, t)
             cam_to_world = hw2_scene.compose_transformations(camera_transforms)
         # if not, use original transform matrix
+        # doesnt move
         else:
             cam_to_world = camera.cam_to_world
 
@@ -882,8 +883,6 @@ def hw2_5(args):
             #if there are no keyframes, then it doesnt move, use the mesh orig M matrix
             else:
                 model_matrix = mesh.model_matrix
-
-            # model_matrix = hw2_scene.compose_transformations(mesh_transforms)
 
             MVP = world_to_screen @ model_matrix
 
@@ -1080,12 +1079,26 @@ def hw2_6(args):
         # remember to handle animation if keyframes exist
         view_matrix = np.zeros((4, 4), dtype=np.float32)
 
+        if camera.transform_keyframes:
+            camera_transforms = interpolate_transformation(camera.transform_keyframes, t)
+            cam_to_world = hw2_scene.compose_transformations(camera_transforms)
+        else:
+            cam_to_world = camera.cam_to_world
+
+        view_matrix = np.linalg.inv(cam_to_world)
+
         render_pass = command_encoder.begin_render_pass(render_pass_desc)
 
         for mesh, gpu_mesh in zip(scene.meshes, gpu_meshes):
             # HW 2.6 TODO: compute the model matrix
             # remember to handle animation if keyframes exist
             model_matrix = np.zeros((4, 4), dtype=np.float32)
+
+            if mesh.transform_keyframes:
+                mesh_transforms = interpolate_transformation(mesh.transform_keyframes, t)
+                model_matrix = hw2_scene.compose_transformations(mesh_transforms)
+            else:
+                model_matrix = mesh.model_matrix
 
             MVP = clip_projection @ view_matrix @ model_matrix
 
