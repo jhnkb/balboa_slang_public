@@ -1,0 +1,18 @@
+{
+  "camera": {
+    "resolution": [256, 256],
+    "s": 1.0
+  },
+  "background": [0.5, 0.5, 0.5],
+  "objects": [
+    {
+      "filename": "tiny_cube_mesh.json",
+      "transform": [
+        {"translate": [0, 0, 5]},
+        {"rotate_y": [25]},
+        {"rotate_x": [15]},
+        {"translate": [0, 0, -5]}
+      ]
+    }
+  ]
+}

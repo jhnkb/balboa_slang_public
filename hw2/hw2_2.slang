@@ -53,8 +53,8 @@ void compute_main(uint2 tid : SV_DispatchThreadID,
 
         // convert screen space --> projected camera space
         // p --> projp
-        float projp_x = (p.x * (2.0 * s * a) / width) - (s * a);
-        float projp_y = s - ((p.y * 2.0 * s) / height);
+        float projp_x = (p_center.x * (2.0 * s * a) / width) - (s * a);
+        float projp_y = s - ((p_center.y * 2.0 * s) / height);
         float3 projp = float3(projp_x, projp_y, -1.0);
 
         // sp0 --> proj0

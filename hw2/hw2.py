@@ -261,10 +261,41 @@ def hw2_3(args):
     # HW 2.3: implement this
     # change np.zeros into the right matrices
     projection = np.zeros((4, 4), dtype=np.float32)
+
+    # equation 29 from handout
+    projection = np.array([[1, 0, 0, 0],
+                           [0, 1, 0, 0],
+                           [0, 0, 0, 1,],
+                           [0, 0, -1, 0]], dtype=np.float32)
+    
     camera_to_screen = np.zeros((4, 4), dtype=np.float32)
+
+    # x" = width ((x' + sa)/2sa)
+    # y" = height ((s-y')/2s)
+
+    s = camera.s
+
+    camera_to_screen = np.array([[width/(2.0 * s * a), 0, 0, width/2.0],
+                                 [0, -height/ (2.0 * s), 0, height/2.0],
+                                 [0, 0, 1, 0],
+                                 [0, 0, 0, 1]], dtype=np.float32)
+
+    #converts camera space --> projected homogenous screen coordinates
+
+    camera_to_screen = camera_to_screen @ projection
+
     # use camera.cam_to_world
     view_matrix = np.zeros((4, 4), dtype=np.float32)
+    view_matrix = np.linalg.inv(camera.cam_to_world)
+
     world_to_screen = np.zeros((4, 4), dtype=np.float32)
+
+    # note here: camera_to_screen already contains (projection and screen mapping)
+    # this means view matrix will happen BEFORE those two
+    world_to_screen = camera_to_screen @ view_matrix
+
+    # world_to_screen = (3):camera_to_screen X (2):projection X (1):view_matrix X  _______????______
+    #                                                 P                  V             M missing
     
     screen_vertices_list = []
     inv_depth_list = []
@@ -273,6 +304,7 @@ def hw2_3(args):
         # change np.zeros into the right matrix
         # use mesh.model_matrix
         MVP = np.zeros((4, 4), dtype=np.float32)
+        MVP = world_to_screen @ mesh.model_matrix
         ones = np.ones((mesh.vertices.shape[0], 1), dtype=mesh.vertices.dtype)
         vertices = np.concatenate(
             [mesh.vertices, ones],
@@ -285,6 +317,12 @@ def hw2_3(args):
         # ---
         # HW 2.3: your code here
         # ---
+
+        # transpose MVP because vertices are stored as rows,
+        # so we need to flip the matrix to multiply them correctly.
+        vertices = vertices @ MVP.T
+        vertices[:, :3] = vertices[:, :3] / vertices[:, 3:4]
+
         inv_depth_list.append(np.ascontiguousarray(vertices[:, 2]))
         screen_vertices_list.append(np.ascontiguousarray(vertices[:, :2]))
 
@@ -309,6 +347,49 @@ def hw2_3(args):
             for tri_id in range(mesh.faces.shape[0]):
                 # HW 2.3: implement this
                 # (basically the same as HW 2.2)
+
+                vertex_indices = mesh.faces[tri_id]
+                
+                sp0 = screen_vertices[vertex_indices[0]]
+                sp1 = screen_vertices[vertex_indices[1]]
+                sp2 = screen_vertices[vertex_indices[2]]
+    
+                inv_depth0 = inv_depth[vertex_indices[0]]
+                inv_depth1 = inv_depth[vertex_indices[1]]
+                inv_depth2 = inv_depth[vertex_indices[2]]
+
+                c0 = mesh.vertex_colors[vertex_indices[0]]
+                c1 = mesh.vertex_colors[vertex_indices[1]]
+                c2 = mesh.vertex_colors[vertex_indices[2]]
+    
+                # get all the x's
+                x_list = [sp0[0],sp1[0],sp2[0]]
+                y_list = [sp0[1],sp1[1],sp2[1]]
+            
+                # floats --> ints
+                x_min = math.floor(min(x_list))
+                x_max = math.ceil(max(x_list))
+            
+                y_min = math.floor(min(y_list))
+                y_max = math.ceil(max(y_list))
+            
+                # make sure the proj. image plane space coords
+                # do not cross the screen space/image dimensions
+                # if they do, set the min and max to 0 and max (img) dims
+                if x_min < 0:
+                    x_min = 0
+            
+                if y_min < 0:
+                    y_min = 0
+            
+                if x_max >= width:
+                    x_max = width - 1 #compensate for 0 indexing
+            
+                if y_max >= height:
+                    y_max = height - 1 #compensate for 0 indexing
+    
+                aabb_min = [x_min, y_min]
+                aabb_max = [x_max, y_max]
 
                 if aabb_min[0] > aabb_max[0] or aabb_min[1] > aabb_max[1]:
                     continue
@@ -356,7 +437,129 @@ def interpolate_transformation(transform_keyframes, t):
     #
     # Return a list of transformations in the same format
     # as the "transform" field in the scene JSON.
+    if not transform_keyframes:
+        return []
+
     interp_transforms = []
+
+    t_leftneighbor = float("-inf")
+    t_rightneighbor = float("inf")
+
+    leftneighbor = None
+    rightneighbor = None
+
+    for keyframe in transform_keyframes:
+        t_keyframe = keyframe["time"]
+
+        if t_keyframe <= t and t_leftneighbor < t_keyframe:
+            t_leftneighbor = t_keyframe
+            leftneighbor = keyframe
+        if t_keyframe >= t and t_rightneighbor > t_keyframe:
+            t_rightneighbor = t_keyframe
+            rightneighbor = keyframe
+
+    if t_leftneighbor == t_rightneighbor:
+        return rightneighbor["transform"]
+
+    if leftneighbor is None:
+        return rightneighbor["transform"]
+
+    if rightneighbor is None:
+        return leftneighbor["transform"]
+
+    t_0 = t_leftneighbor
+    t_1 = t_rightneighbor
+    w = (t-t_0)/(t_1-t_0)
+
+    #gets a list of dictionaries
+    left_transform = leftneighbor["transform"]
+    right_transform = rightneighbor["transform"]
+
+    #go through the list of dictionaries one by one at the same time
+    for left_item, right_item in zip(left_transform, right_transform):
+        new_transform = dict()
+
+        ##### SCALING #####
+        if "scale" in left_item and "scale" in right_item:
+            
+            left_scale_vals = np.array(left_item["scale"])
+            right_scale_vals = np.array(right_item["scale"])
+
+            new_scale = (1-w)*left_scale_vals + w*right_scale_vals
+            new_scale = new_scale.tolist()
+
+            new_transform["scale"] = new_scale
+
+        ##### TRANSLATRION #####
+        if "translate" in left_item and "translate" in right_item:
+
+            left_translate_vals = np.array(left_item["translate"])
+            right_translate_vals = np.array(right_item["translate"])
+
+            new_translate = (1-w)*left_translate_vals + w*right_translate_vals
+            new_translate = new_translate.tolist()
+
+            new_transform["translate"] = new_translate
+
+        ##### ROTATEX ######
+        elif "rotate_x" in left_item and "rotate_x" in right_item:
+            left_rotate_val_degree = left_item["rotate_x"][0]
+            right_rotate_val_degree = right_item["rotate_x"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate_x"] = rotations
+
+        ##### ROTATEY ######
+        elif "rotate_y" in left_item and "rotate_y" in right_item:
+            left_rotate_val_degree = left_item["rotate_y"][0]
+            right_rotate_val_degree = right_item["rotate_y"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate_y"] = rotations      
+
+        ##### ROTATEZ ######
+        elif "rotate_z" in left_item and "rotate_z" in right_item:
+            left_rotate_val_degree = left_item["rotate_z"][0]
+            right_rotate_val_degree = right_item["rotate_z"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate_z"] = rotations
+
+        ##### LOOKAT #####
+        elif "lookat" in left_item and "lookat" in right_item:
+            left_position = np.array(left_item["lookat"]["position"])
+            left_target = np.array(left_item["lookat"]["target"])
+            left_up = np.array(left_item["lookat"]["up"])
+
+            right_position = np.array(right_item["lookat"]["position"])
+            right_target = np.array(right_item["lookat"]["target"])
+            right_up = np.array(right_item["lookat"]["up"])
+
+            new_position = (1-w)*left_position + w*right_position
+            new_target = (1-w)*left_target + w*right_target
+            new_up = (1-w)*left_up + w*right_up
+
+            new_position = list(new_position)
+            new_target = list(new_target)
+            new_up = list(new_up)
+
+            new_transform["lookat"] = {
+                "position": new_position,
+                "target": new_target,
+                "up": new_up
+            }
+
+        if new_transform:
+            interp_transforms.append(new_transform)
 
     return interp_transforms
     
@@ -375,25 +578,76 @@ def hw2_4(args):
     # HW 2.4 TODO: implement this (basically the same as 2.3)
     # change np.zeros into the right matrices
     projection = np.zeros((4, 4), dtype=np.float32)
+
+    # equation 29 from handout
+    projection = np.array([[1, 0, 0, 0],
+                            [0, 1, 0, 0],
+                            [0, 0, 0, 1,],
+                            [0, 0, -1, 0]], dtype=np.float32)
+    
     camera_to_screen = np.zeros((4, 4), dtype=np.float32)
+
+    s = camera.s
+
+    camera_to_screen = np.array([[width/(2.0 * s * a), 0, 0, width/2.0],
+                                 [0, -height/ (2.0 * s), 0, height/2.0],
+                                 [0, 0, 1, 0],
+                                 [0, 0, 0, 1]], dtype=np.float32)
+
+    camera_to_screen = camera_to_screen @ projection
+
+
+    # interpolate_transformation() calculates how something should be transformed at a specific time t.
+    # Camera: Determines where the camera is and where it's looking at time t.
+    # Mesh: Determines where the object is, how it's rotated, and how it's scaled at time t.
 
     def render_frame(command_encoder, t):
         t = t % scene.duration
         # HW 2.4 TODO: insert your code here and fill in world_to_screen
         # by using interpolate_transformation to compute the view matrix at time t
+
+        # returns list of camera transformations at time t
+        # these are interpolated camera transformations at time t
+
+        camera_transforms = interpolate_transformation(camera.transform_keyframes, t)
+
+        cam_to_world = hw2_scene.compose_transformations(camera_transforms)
+
+        view_matrix = np.linalg.inv(cam_to_world)
         world_to_screen = np.zeros((4, 4), dtype=np.float32)
+
+        # note here: camera_to_screen already contains (projection and screen mapping)
+        # this means view matrix will happen BEFORE those two
+        world_to_screen = camera_to_screen @ view_matrix
+
+        # world_to_screen = (3):camera_to_screen X (2):projection X (1):view_matrix X  _______????______
+        #                                                 P                  V             M missing
         
         screen_vertices_list = []
         inv_depth_list = []
         for mesh in scene.meshes:
             # HW 2.4 TODO: insert your code here and fill in the MVP matrix
             # by using interpolate_transformation to compute the model matrix at time t
+
+            mesh_transforms = interpolate_transformation(mesh.transform_keyframes, t)
+
+            model_matrix = hw2_scene.compose_transformations(mesh_transforms)
+
             MVP = np.zeros((4, 4), dtype=np.float32)
+
+            MVP = world_to_screen @ model_matrix
+
             ones = np.ones((mesh.vertices.shape[0], 1), dtype=mesh.vertices.dtype)
             vertices = np.concatenate(
                 [mesh.vertices, ones],
                 axis=1
             )
+
+            vertices = vertices @ MVP.T
+
+            # divide x, y, and z by w to get screen coordinates and inverse depth
+            vertices[:, :3] = vertices[:, :3] / vertices[:, 3:4]
+
             # HW 2.4 TODO: insert your code here (basically the same as 2.3)
             inv_depth_list.append(np.ascontiguousarray(vertices[:, 2]))
             screen_vertices_list.append(np.ascontiguousarray(vertices[:, :2]))
@@ -419,6 +673,48 @@ def hw2_4(args):
             for tri_id in range(mesh.faces.shape[0]):
                 # HW 2.4 TODO: implement this
                 # (basically the same as HW 2.2 & 2.3)
+                vertex_indices = mesh.faces[tri_id]
+                
+                sp0 = screen_vertices[vertex_indices[0]]
+                sp1 = screen_vertices[vertex_indices[1]]
+                sp2 = screen_vertices[vertex_indices[2]]
+    
+                inv_depth0 = inv_depth[vertex_indices[0]]
+                inv_depth1 = inv_depth[vertex_indices[1]]
+                inv_depth2 = inv_depth[vertex_indices[2]]
+
+                c0 = mesh.vertex_colors[vertex_indices[0]]
+                c1 = mesh.vertex_colors[vertex_indices[1]]
+                c2 = mesh.vertex_colors[vertex_indices[2]]
+    
+                # get all the x's
+                x_list = [sp0[0],sp1[0],sp2[0]]
+                y_list = [sp0[1],sp1[1],sp2[1]]
+            
+                # floats --> ints
+                x_min = math.floor(min(x_list))
+                x_max = math.ceil(max(x_list))
+            
+                y_min = math.floor(min(y_list))
+                y_max = math.ceil(max(y_list))
+            
+                # make sure the proj. image plane space coords
+                # do not cross the screen space/image dimensions
+                # if they do, set the min and max to 0 and max (img) dims
+                if x_min < 0:
+                    x_min = 0
+            
+                if y_min < 0:
+                    y_min = 0
+            
+                if x_max >= width:
+                    x_max = width - 1 #compensate for 0 indexing
+            
+                if y_max >= height:
+                    y_max = height - 1 #compensate for 0 indexing
+    
+                aabb_min = [x_min, y_min]
+                aabb_max = [x_max, y_max]
 
                 if aabb_min[0] > aabb_max[0] or aabb_min[1] > aabb_max[1]:
                     continue
@@ -534,10 +830,36 @@ def hw2_5(args):
     projection = np.zeros((4, 4), dtype=np.float32)
     camera_to_screen = np.zeros((4, 4), dtype=np.float32)
 
+    # equation 29 
+    projection = np.array([[1, 0, 0, 0],
+                           [0, 1, 0, 0],
+                           [0, 0, 0, 1],
+                           [0, 0, -1, 0]], dtype=np.float32)
+
+    s = camera.s
+
+    camera_to_screen = np.array([[width / (2.0 * s * a), 0, 0, width / 2.0],
+                                 [0, -height / (2.0 * s), 0, height / 2.0],
+                                 [0, 0, 1, 0],
+                                 [0, 0, 0, 1]], dtype=np.float32)
+
+    camera_to_screen = camera_to_screen @ projection
+
     def render_frame(command_encoder, t):
         t = t % scene.duration
         # HW 2.5 TODO: implement this (basically the same as 2.4)
         world_to_screen = np.zeros((4, 4), dtype=np.float32)
+
+        # check if camera has keyframes
+        if camera.transform_keyframes:
+            camera_transforms = interpolate_transformation(camera.transform_keyframes, t)
+            cam_to_world = hw2_scene.compose_transformations(camera_transforms)
+        # if not, use original transform matrix
+        else:
+            cam_to_world = camera.cam_to_world
+
+        view_matrix = np.linalg.inv(cam_to_world)
+        world_to_screen = camera_to_screen @ view_matrix
 
         command_encoder.clear_texture_float(
             color_image,
@@ -552,6 +874,19 @@ def hw2_5(args):
         for mesh, offset in zip(scene.meshes, vertex_offsets):
             # HW 2.5 TODO: implement this (basically the same as 2.4)
             MVP = np.zeros((4, 4), dtype=np.float32)
+
+            # check if the mesh has animation keyframes
+            if mesh.transform_keyframes:
+                mesh_transforms = interpolate_transformation(mesh.transform_keyframes, t)
+                model_matrix = hw2_scene.compose_transformations(mesh_transforms)
+            #if there are no keyframes, then it doesnt move, use the mesh orig M matrix
+            else:
+                model_matrix = mesh.model_matrix
+
+            # model_matrix = hw2_scene.compose_transformations(mesh_transforms)
+
+            MVP = world_to_screen @ model_matrix
+
             transform_vertices_shader.kernel.dispatch(\
                 thread_count=[mesh.vertices.shape[0], 1, 1],
                 command_encoder=command_encoder,

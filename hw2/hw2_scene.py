@@ -187,9 +187,100 @@ def compose_transformations(transformations):
     F = np.eye(4, dtype=np.float32)
 
     for transform in transformations:
-        pass
         # HW 2.3 TODO: your code here
 
+        if "scale" in transform:
+            scale_val = transform["scale"]
+
+            scale_x = scale_val[0]
+            scale_y = scale_val[1]
+            scale_z = scale_val[2]
+
+            S = np.array([[scale_x, 0, 0, 0],
+                         [0, scale_y, 0, 0],
+                         [0, 0, scale_z, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+
+            F = S @ F
+        elif "translate" in transform:
+            t_vals = transform["translate"]
+
+            t_x = t_vals[0]
+            t_y = t_vals[1]
+            t_z = t_vals[2]
+
+            T = np.array([[1, 0, 0, t_x],
+                         [0, 1, 0, t_y],
+                         [0, 0, 1, t_z],
+                         [0, 0, 0, 1]], dtype=np.float32)
+
+            F = T @ F
+        elif "rotate_x" in transform:
+            rotation_vals = transform["rotate_x"]
+
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[1, 0, 0, 0],
+                         [0, cos, -sin, 0],
+                         [0, sin, cos, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+            F = R @ F
+        elif "rotate_y" in transform:
+            rotation_vals = transform["rotate_y"]
+
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[cos, 0, sin, 0],
+                         [0, 1, 0, 0],
+                         [-sin, 0, cos, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+            F = R @ F
+        elif "rotate_z" in transform:
+            rotation_vals = transform["rotate_z"]
+
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[cos, -sin, 0, 0],
+                         [sin, cos, 0, 0],
+                         [0, 0, 1, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+            F = R @ F   
+        elif "lookat" in transform:
+            position = transform["lookat"]["position"]
+            target =transform["lookat"]["target"]
+            up =transform["lookat"]["up"]
+
+            p = np.array(position, dtype=float)
+            t = np.array(target, dtype=float)
+            u = np.array(up, dtype=float)
+
+            d = t - p
+            #normalize distance
+            d = d / np.linalg.norm(d)
+
+            r = np.cross(d, u)
+            r = r / np.linalg.norm(r)
+
+            u_p = np.cross(r,d)
+
+            L = np.array([[r[0], u_p[0], -d[0], p[0]],
+                          [r[1], u_p[1], -d[1], p[1]],
+                          [r[2], u_p[2], -d[2], p[2]],
+                          [0, 0, 0, 1]], dtype=np.float32)
+
+            F = L @ F
     return F
 
 def parse_scene(filename : str) -> Scene:
