@@ -1,8 +1,8 @@
 {
   "duration": 3.0,
   "camera": {
-    "resolution": [1024, 768],
-    "s": 0.38,
+    "resolution": [400, 400],
+    "s": 0.20,
     "z_near": 0.001,
     "transform": [
       {
