@@ -43,16 +43,239 @@ def compose_transformations(transformations):
     """
         Given a list of transformations, compose them into a matrix.
     """
-    # HW 3.4: copy paste your HW2.3 code here
-
     F = np.eye(4, dtype=np.float32)
+
+    for transform in transformations:
+        # HW 2.3 TODO: your code here
+
+        if "scale" in transform:
+            scale_val = transform["scale"]
+
+            scale_x = scale_val[0]
+            scale_y = scale_val[1]
+            scale_z = scale_val[2]
+
+            S = np.array([[scale_x, 0, 0, 0],
+                         [0, scale_y, 0, 0],
+                         [0, 0, scale_z, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+
+            F = S @ F
+        elif "translate" in transform:
+            t_vals = transform["translate"]
+
+            t_x = t_vals[0]
+            t_y = t_vals[1]
+            t_z = t_vals[2]
+
+            T = np.array([[1, 0, 0, t_x],
+                         [0, 1, 0, t_y],
+                         [0, 0, 1, t_z],
+                         [0, 0, 0, 1]], dtype=np.float32)
+
+            F = T @ F
+        elif "rotate_x" in transform:
+            rotation_vals = transform["rotate_x"]
+
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[1, 0, 0, 0],
+                         [0, cos, -sin, 0],
+                         [0, sin, cos, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+            F = R @ F
+        elif "rotate_y" in transform:
+            rotation_vals = transform["rotate_y"]
+
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[cos, 0, sin, 0],
+                         [0, 1, 0, 0],
+                         [-sin, 0, cos, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+            F = R @ F
+        elif "rotate_z" in transform:
+            rotation_vals = transform["rotate_z"]
+
+            degree = rotation_vals[0]
+            radian = math.radians(degree)
+
+            sin = math.sin(radian)
+            cos = math.cos(radian)
+
+            R = np.array([[cos, -sin, 0, 0],
+                         [sin, cos, 0, 0],
+                         [0, 0, 1, 0],
+                         [0, 0, 0, 1]], dtype=np.float32)
+            F = R @ F   
+        elif "lookat" in transform:
+            position = transform["lookat"]["position"]
+            target =transform["lookat"]["target"]
+            up =transform["lookat"]["up"]
+
+            p = np.array(position, dtype=float)
+            t = np.array(target, dtype=float)
+            u = np.array(up, dtype=float)
+
+            d = t - p
+            #normalize distance
+            d = d / np.linalg.norm(d)
+
+            r = np.cross(d, u)
+            r = r / np.linalg.norm(r)
+
+            u_p = np.cross(r,d)
+
+            L = np.array([[r[0], u_p[0], -d[0], p[0]],
+                          [r[1], u_p[1], -d[1], p[1]],
+                          [r[2], u_p[2], -d[2], p[2]],
+                          [0, 0, 0, 1]], dtype=np.float32)
+
+            F = L @ F
     return F
 
 def interpolate_transformation(transform_keyframes, t):
-    # HW 3.4: copy your HW2.4 code here.
+    # HW 2.4: implement this
+    # Find the two keyframes surrounding t and linearly
+    # interpolate the corresponding transformation parameters.
+    #
+    # Return a list of transformations in the same format
+    # as the "transform" field in the scene JSON.
 
-    # create a new transform from the two keyframes
+    # this is to check if there exists keyframes,
+    # if it does not then return an empty list.
+    if transform_keyframes == []:
+        return []
+
     interp_transforms = []
+
+    t_leftneighbor = float("-inf")
+    t_rightneighbor = float("inf")
+
+    leftneighbor = None
+    rightneighbor = None
+
+    for keyframe in transform_keyframes:
+        t_keyframe = keyframe["time"]
+
+        if t_keyframe <= t and t_leftneighbor < t_keyframe:
+            t_leftneighbor = t_keyframe
+            leftneighbor = keyframe
+        if t_keyframe >= t and t_rightneighbor > t_keyframe:
+            t_rightneighbor = t_keyframe
+            rightneighbor = keyframe
+
+    if t_leftneighbor == t_rightneighbor:
+        return rightneighbor["transform"]
+
+    if leftneighbor is None:
+        return rightneighbor["transform"]
+
+    if rightneighbor is None:
+        return leftneighbor["transform"]
+
+    t_0 = t_leftneighbor
+    t_1 = t_rightneighbor
+    w = (t-t_0)/(t_1-t_0)
+
+    #gets a list of dictionaries
+    left_transform = leftneighbor["transform"]
+    right_transform = rightneighbor["transform"]
+
+    #go through the list of dictionaries one by one at the same time
+    for left_item, right_item in zip(left_transform, right_transform):
+        new_transform = dict()
+
+        ##### SCALING #####
+        if "scale" in left_item and "scale" in right_item:
+            
+            left_scale_vals = np.array(left_item["scale"])
+            right_scale_vals = np.array(right_item["scale"])
+
+            new_scale = (1-w)*left_scale_vals + w*right_scale_vals
+            new_scale = new_scale.tolist()
+
+            new_transform["scale"] = new_scale
+
+        ##### TRANSLATRION #####
+        elif "translate" in left_item and "translate" in right_item:
+
+            left_translate_vals = np.array(left_item["translate"])
+            right_translate_vals = np.array(right_item["translate"])
+
+            new_translate = (1-w)*left_translate_vals + w*right_translate_vals
+            new_translate = new_translate.tolist()
+
+            new_transform["translate"] = new_translate
+
+        ##### ROTATEX ######
+        elif "rotate_x" in left_item and "rotate_x" in right_item:
+            left_rotate_val_degree = left_item["rotate_x"][0]
+            right_rotate_val_degree = right_item["rotate_x"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate_x"] = rotations
+
+        ##### ROTATEY ######
+        elif "rotate_y" in left_item and "rotate_y" in right_item:
+            left_rotate_val_degree = left_item["rotate_y"][0]
+            right_rotate_val_degree = right_item["rotate_y"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate_y"] = rotations      
+
+        ##### ROTATEZ ######
+        elif "rotate_z" in left_item and "rotate_z" in right_item:
+            left_rotate_val_degree = left_item["rotate_z"][0]
+            right_rotate_val_degree = right_item["rotate_z"][0]
+
+            rotations = []
+            new_rotate = (1-w)*left_rotate_val_degree + w*right_rotate_val_degree
+            rotations.append(new_rotate)
+
+            new_transform["rotate_z"] = rotations
+
+        ##### LOOKAT #####
+        elif "lookat" in left_item and "lookat" in right_item:
+            left_position = np.array(left_item["lookat"]["position"])
+            left_target = np.array(left_item["lookat"]["target"])
+            left_up = np.array(left_item["lookat"]["up"])
+
+            right_position = np.array(right_item["lookat"]["position"])
+            right_target = np.array(right_item["lookat"]["target"])
+            right_up = np.array(right_item["lookat"]["up"])
+
+            new_position = (1-w)*left_position + w*right_position
+            new_target = (1-w)*left_target + w*right_target
+            new_up = (1-w)*left_up + w*right_up
+
+            new_position = list(new_position)
+            new_target = list(new_target)
+            new_up = list(new_up)
+
+            new_transform["lookat"] = {
+                "position": new_position,
+                "target": new_target,
+                "up": new_up
+            }
+
+        if new_transform:
+            interp_transforms.append(new_transform)
+
     return interp_transforms
 
 def get_transformation(obj, t):

@@ -609,9 +609,12 @@ def hw2_4(args):
         # returns list of camera transformations at time t
         # these are interpolated camera transformations at time t
 
-        camera_transforms = interpolate_transformation(camera.transform_keyframes, t)
+        if camera.transform_keyframes:
+            camera_transforms = interpolate_transformation(camera.transform_keyframes, t)
+            cam_to_world = hw2_scene.compose_transformations(camera_transforms)
+        else:
+            cam_to_world = camera.cam_to_world
 
-        cam_to_world = hw2_scene.compose_transformations(camera_transforms)
 
         view_matrix = np.linalg.inv(cam_to_world)
         world_to_screen = np.zeros((4, 4), dtype=np.float32)
@@ -629,9 +632,14 @@ def hw2_4(args):
             # HW 2.4 TODO: insert your code here and fill in the MVP matrix
             # by using interpolate_transformation to compute the model matrix at time t
 
-            mesh_transforms = interpolate_transformation(mesh.transform_keyframes, t)
+            print("Mesh keyframes:", mesh.transform_keyframes)
 
-            model_matrix = hw2_scene.compose_transformations(mesh_transforms)
+            # Check if mesh has animation keyframes
+            if mesh.transform_keyframes:
+                mesh_transforms = interpolate_transformation(mesh.transform_keyframes, t)
+                model_matrix = hw2_scene.compose_transformations(mesh_transforms)
+            else:
+                model_matrix = mesh.model_matrix
 
             MVP = np.zeros((4, 4), dtype=np.float32)
 
