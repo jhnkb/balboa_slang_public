@@ -38,7 +38,7 @@ void compute_main(uint2 tid : SV_DispatchThreadID,
     //get the image width using formula given from hw
     float img_width = 2 * tan(radians(camera.fov_x)/2.0);
 
-    // get the half width and half height, 
+    // get the half width and half height,
     float half_width = img_width/2;
     float half_height = half_width/a;
 
@@ -49,7 +49,7 @@ void compute_main(uint2 tid : SV_DispatchThreadID,
     float3 ray_o = float3(0.0);
     float3 ray_d = normalize(p_image - ray_o);
 
-    // first transform the camera rays to world space using cam_to_world. 
+    // first transform the camera rays to world space using cam_to_world.
     ray_o = xform_pt(camera.cam_to_world, ray_o);
     ray_d = xform_vec(camera.cam_to_world, ray_d);
 
@@ -58,7 +58,7 @@ void compute_main(uint2 tid : SV_DispatchThreadID,
     // throughput keeps track of how much reflection color we keep
     float3 color = float3(0.0);
     float3 throughput = float3(1.0);
-    
+
     // repeat for max_depth number of rays
     // first ray is from camera, the rest are reflections
     for (int b = 0; b < max_depth; b++){
@@ -133,218 +133,263 @@ void compute_main(uint2 tid : SV_DispatchThreadID,
             }
             else if (shape.type == ShapeType::TriangleMesh){
                 TriangleMesh mesh = meshes[shape.index];
-                uint first_tri = mesh.triangle_begin;
-                uint last_tri = mesh.triangle_end;
 
                 // Next transform the rays to the object space using world_to_obj.
                 float3 obj_ray_o = xform_pt(shape.world_to_obj, ray_o);
                 float3 obj_ray_d = xform_vec(shape.world_to_obj, ray_d);
 
-                //loop through the triangles
-                for (uint j = first_tri; j < last_tri; j++){
-                    // get the three vertex indexes
-                    uint3 tri_indexes = triangles[j] + mesh.vertex_offset;
+                uint bvh_index = mesh.bvh_root_index;
+                uint last_bvh_index = bvh_nodes[bvh_index].next_index;
 
-                    //get the actual vertex positions
-                    float3 p0 = float3(vertices[tri_indexes[0]]);
-                    float3 p1 = float3(vertices[tri_indexes[1]]);
-                    float3 p2 = float3(vertices[tri_indexes[2]]);
+                while (bvh_index < last_bvh_index){
 
-                    // test ray-triangle intersection using intersect_tri
-                    float3 b;
-                    float t;
+                    BVHNode currNode = bvh_nodes[bvh_index];
+                    float3 p_min = currNode.bbox_min;
+                    float3 p_max = currNode.bbox_max;
 
-                    bool roots_exist = intersect_tri(p0, p1, p2, obj_ray_o, obj_ray_d, EPSILON, smallest_t, b, t);
+                    bool box_hit = intersect_aabb(p_min, p_max, obj_ray_o, obj_ray_d, EPSILON, smallest_t);
 
-                    if (roots_exist){
-                        smallest_t = t;
-                        smallest_t_index = i;
-                        closest_tri_index = j;
-                        closest_b = b;
-                    }
-                }
-            }
-        }   
+                    if (box_hit){
 
-            // if ray doesnt hit anything, use BG color
-            // throughput matters here because this could be reflected ray
-            if (smallest_t_index == -1){
-                color += throughput * background;
-                break;
-            }
+                        if(currNode.is_leaf){
+                            uint first_tri = currNode.triangle_begin;
+                            uint last_tri = currNode.triangle_end;
 
-            //now we know the closest SHAPE for the current ray
-            Shape shape = shapes[smallest_t_index];
-            float3 x_c;
-            float r;
+                            //loop through the triangles
+                            for (uint j = first_tri; j < last_tri; j++){
+                                // get the three vertex indexes
+                                uint3 tri_indexes = triangles[j] + mesh.vertex_offset;
 
-            float3 obj_ray_o = xform_pt(shape.world_to_obj, ray_o);
-            float3 obj_ray_d = xform_vec(shape.world_to_obj, ray_d);
+                                //get the actual vertex positions
+                                float3 p0 = float3(vertices[tri_indexes[0]]);
+                                float3 p1 = float3(vertices[tri_indexes[1]]);
+                                float3 p2 = float3(vertices[tri_indexes[2]]);
 
-            // Next transform the object space intersection 
-            // points using obj_to_world and normals using the inverse transpose
+                                // test ray-triangle intersection using intersect_tri
+                                float3 b;
+                                float t;
 
-            //intersection in obj space
-            float3 obj_p_intersect = obj_ray_o + smallest_t * obj_ray_d;
+                                bool roots_exist = intersect_tri(p0, p1, p2, obj_ray_o, obj_ray_d, EPSILON, smallest_t, b, t);
 
-            //intersection in world space
-            float3 p_intersect = xform_pt(shape.obj_to_world, obj_p_intersect);
-
-            float3 obj_n;
-
-            if (shape.type == ShapeType::Sphere) {
-                Sphere sphere = spheres[shape.index];
-
-                x_c = float3(sphere.center);
-                r = float(sphere.radius);
-
-                // normal in object space
-                obj_n = (obj_p_intersect - x_c) / r;
-            }
-            else if (shape.type == ShapeType::TriangleMesh){
-                TriangleMesh mesh = meshes[shape.index];
-
-                uint3 triangle = mesh.vertex_offset + triangles[closest_tri_index];
-
-                // now get normals from vertex_normals
-                float3 n0 = vertex_normals[triangle[0]];
-                float3 n1 = vertex_normals[triangle[1]];
-                float3 n2 = vertex_normals[triangle[2]];
-
-                // interpolate normal
-                obj_n = closest_b[0] * n0 + closest_b[1] * n1 + closest_b[2] * n2;
-            }
-            
-
-            //normal in world space
-            float3 n = xform_vec(transpose(shape.world_to_obj), obj_n);
-            n = normalize(n);
-
-            // Kd is diffuse color, Kr is reflection color
-            float3 Kd = shape.Kd;
-            float3 Kr = shape.Kr;
-
-            //loop through the lights
-            for (int i = 0; i < num_lights; i++){
-                PointLight light = lights[i];
-                float3 light_pos = light.position;
-                float3 I = light.intensity;
-                
-                // destination - origin
-                // direction from intersection to light
-                float3 shadow_ray = light_pos - p_intersect;
-
-                // this is the l in the formula and ray_d from above
-                // THIS IS A DIRECTION TOO
-                float3 shadow_d = normalize(shadow_ray);
-
-                // establish the limits of how far or close 
-                // when checking the t values
-                // avoids self intersecting from origin
-                float t_min = EPSILON;
-                float t_max = length(shadow_ray);
-                
-                bool blocking = false;
-
-                // check whether any sphere blocks the light
-                for (int y = 0; y < num_shapes; y++){
-                    Shape other_shape = shapes[y];
-
-                    if (other_shape.type == ShapeType::Sphere){
-                        Sphere other_sphere = spheres[other_shape.index];
-
-                        float3 x_c = float3(other_sphere.center);
-                        // float3 shadow_o = p_intersect;
-                        float3 obj_shadow_o = xform_pt(other_shape.world_to_obj, p_intersect);
-                        float3 obj_shadow_d = xform_vec(other_shape.world_to_obj, shadow_d);
-                        float r = float(other_sphere.radius);
-                        float3 v = obj_shadow_o - x_c;
-
-                        //derive A, B, and C (look at notes)
-                        //replace ray_d with shadow_d 
-                        float A = obj_shadow_d.x * obj_shadow_d.x + obj_shadow_d.y * obj_shadow_d.y + obj_shadow_d.z * obj_shadow_d.z;
-                        float B = 2.0 * (v.x * obj_shadow_d.x + v.y * obj_shadow_d.y + v.z * obj_shadow_d.z);
-                        float C = v.x * v.x + v.y * v.y + v.z * v.z - r * r;
-
-                        float2 t_results;
-                        bool roots_exist = solve_quadratic(A, B, C, t_results);
-
-                        if (roots_exist){
-                            if ((t_results.x > t_min && t_results.x < t_max) 
-                            || (t_results.y > t_min && t_results.y < t_max)){
-                                blocking = true;
-                                break;
-                            } 
-                        }
-                    }
-                    else if (other_shape.type == ShapeType::TriangleMesh){
-                        TriangleMesh mesh = meshes[other_shape.index];
-                        uint first_tri = mesh.triangle_begin;
-                        uint last_tri = mesh.triangle_end;
-
-                        // Next transform the rays to the object space using world_to_obj.
-                        float3 obj_shadow_o = xform_pt(other_shape.world_to_obj, p_intersect);
-                        float3 obj_shadow_d = xform_vec(other_shape.world_to_obj, shadow_d);
-
-                        //loop through the triangles
-                        for (uint j = first_tri; j < last_tri; j++){
-                            // get the three vertex indexes
-                            uint3 tri_indexes = triangles[j] + mesh.vertex_offset;
-
-                            //get the actual vertex positions
-                            float3 p0 = float3(vertices[tri_indexes[0]]);
-                            float3 p1 = float3(vertices[tri_indexes[1]]);
-                            float3 p2 = float3(vertices[tri_indexes[2]]);
-
-                            // test ray-triangle intersection using intersect_tri
-                            float3 b;
-                            float t;
-
-                            bool roots_exist = intersect_tri(p0, p1, p2, obj_shadow_o, obj_shadow_d, EPSILON, t_max, b, t);
-
-                            if (roots_exist){
-                                if ((t > t_min && t < t_max)){
-                                    blocking = true;
-                                    break;
+                                if (roots_exist){
+                                    smallest_t = t;
+                                    smallest_t_index = i;
+                                    closest_tri_index = j;
+                                    closest_b = b;
                                 }
                             }
                         }
+                        bvh_index += 1;
                     }
-                    // exit the shade loop if something is already blocking the current light
-                    if (blocking){
-                        break;
+                    else {
+                        bvh_index = currNode.next_index;
+                    }
+                }
+            }
+        }
+
+        // if ray doesnt hit anything, use BG color
+        // throughput matters here because this could be reflected ray
+        if (smallest_t_index == -1){
+            color += throughput * background;
+            break;
+        }
+
+        //now we know the closest SHAPE for the current ray
+        Shape shape = shapes[smallest_t_index];
+        float3 x_c;
+        float r;
+
+        float3 obj_ray_o = xform_pt(shape.world_to_obj, ray_o);
+        float3 obj_ray_d = xform_vec(shape.world_to_obj, ray_d);
+
+        // Next transform the object space intersection
+        // points using obj_to_world and normals using the inverse transpose
+
+        //intersection in obj space
+        float3 obj_p_intersect = obj_ray_o + smallest_t * obj_ray_d;
+
+        //intersection in world space
+        float3 p_intersect = xform_pt(shape.obj_to_world, obj_p_intersect);
+
+        float3 obj_n;
+
+        if (shape.type == ShapeType::Sphere) {
+            Sphere sphere = spheres[shape.index];
+
+            x_c = float3(sphere.center);
+            r = float(sphere.radius);
+
+            // normal in object space
+            obj_n = (obj_p_intersect - x_c) / r;
+        }
+        else if (shape.type == ShapeType::TriangleMesh){
+            TriangleMesh mesh = meshes[shape.index];
+
+            uint3 triangle = mesh.vertex_offset + triangles[closest_tri_index];
+
+            // now get normals from vertex_normals
+            float3 n0 = vertex_normals[triangle[0]];
+            float3 n1 = vertex_normals[triangle[1]];
+            float3 n2 = vertex_normals[triangle[2]];
+
+            // interpolate normal
+            obj_n = closest_b[0] * n0 + closest_b[1] * n1 + closest_b[2] * n2;
+        }
+
+
+        //normal in world space
+        float3 n = xform_vec(transpose(shape.world_to_obj), obj_n);
+        n = normalize(n);
+
+        // Kd is diffuse color, Kr is reflection color
+        float3 Kd = shape.Kd;
+        float3 Kr = shape.Kr;
+
+        //loop through the lights
+        for (int i = 0; i < num_lights; i++){
+            PointLight light = lights[i];
+            float3 light_pos = light.position;
+            float3 I = light.intensity;
+
+            // destination - origin
+            // direction from intersection to light
+            float3 shadow_ray = light_pos - p_intersect;
+
+            // this is the l in the formula and ray_d from above
+            // THIS IS A DIRECTION TOO
+            float3 shadow_d = normalize(shadow_ray);
+
+            // establish the limits of how far or close
+            // when checking the t values
+            // avoids self intersecting from origin
+            float t_min = EPSILON;
+            float t_max = length(shadow_ray);
+
+            bool blocking = false;
+
+            // check whether any sphere blocks the light
+            for (int y = 0; y < num_shapes; y++){
+                Shape other_shape = shapes[y];
+
+                if (other_shape.type == ShapeType::Sphere){
+                    Sphere other_sphere = spheres[other_shape.index];
+
+                    float3 x_c = float3(other_sphere.center);
+                    // float3 shadow_o = p_intersect;
+                    float3 obj_shadow_o = xform_pt(other_shape.world_to_obj, p_intersect);
+                    float3 obj_shadow_d = xform_vec(other_shape.world_to_obj, shadow_d);
+                    float r = float(other_sphere.radius);
+                    float3 v = obj_shadow_o - x_c;
+
+                    //derive A, B, and C (look at notes)
+                    //replace ray_d with shadow_d
+                    float A = obj_shadow_d.x * obj_shadow_d.x + obj_shadow_d.y * obj_shadow_d.y + obj_shadow_d.z * obj_shadow_d.z;
+                    float B = 2.0 * (v.x * obj_shadow_d.x + v.y * obj_shadow_d.y + v.z * obj_shadow_d.z);
+                    float C = v.x * v.x + v.y * v.y + v.z * v.z - r * r;
+
+                    float2 t_results;
+                    bool roots_exist = solve_quadratic(A, B, C, t_results);
+
+                    if (roots_exist){
+                        if ((t_results.x > t_min && t_results.x < t_max)
+                        || (t_results.y > t_min && t_results.y < t_max)){
+                            blocking = true;
+                            break;
+                        }
+                    }
+                }
+                else if (other_shape.type == ShapeType::TriangleMesh){
+                    TriangleMesh mesh = meshes[other_shape.index];
+
+                    // Next transform the rays to the object space using world_to_obj.
+                    float3 obj_shadow_o = xform_pt(other_shape.world_to_obj, p_intersect);
+                    float3 obj_shadow_d = xform_vec(other_shape.world_to_obj, shadow_d);
+
+                    uint bvh_index = mesh.bvh_root_index;
+                    uint last_bvh_index = bvh_nodes[bvh_index].next_index;
+
+                    while (bvh_index < last_bvh_index){
+                        BVHNode currNode = bvh_nodes[bvh_index];
+                        float3 p_min = currNode.bbox_min;
+                        float3 p_max = currNode.bbox_max;
+
+                        bool box_hit = intersect_aabb(p_min, p_max, obj_shadow_o, obj_shadow_d, EPSILON, t_max);
+
+                        if (box_hit) {
+                            uint first_tri = currNode.triangle_begin;
+                            uint last_tri = currNode.triangle_end;
+
+                            if (currNode.is_leaf){
+                                //loop through the triangles
+                                for (uint j = first_tri; j < last_tri; j++){
+                                    // get the three vertex indexes
+                                    uint3 tri_indexes = triangles[j] + mesh.vertex_offset;
+
+                                    //get the actual vertex positions
+                                    float3 p0 = float3(vertices[tri_indexes[0]]);
+                                    float3 p1 = float3(vertices[tri_indexes[1]]);
+                                    float3 p2 = float3(vertices[tri_indexes[2]]);
+
+                                    // test ray-triangle intersection using intersect_tri
+                                    float3 b;
+                                    float t;
+
+                                    bool roots_exist = intersect_tri(p0, p1, p2, obj_shadow_o, obj_shadow_d, EPSILON, t_max, b, t);
+
+                                    if (roots_exist){
+                                        if (t > t_min && t < t_max) {
+                                            blocking = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (blocking){
+                                    break;
+                                }
+                            }
+                            bvh_index += 1;
+                        } else {
+                            bvh_index = currNode.next_index;
+                        }
                     }
                 }
 
-
-
-                // if nothing is blocking between light and sphere surface
-                // calculate contribution
-                if (blocking == false){
-                    float d = length(shadow_ray);
-                    float d_squared = d * d;
-
-                    float diffuse = max(0.0, dot(n,shadow_d));
-
-                    float3 C_diffuse = Kd * (I/d_squared) * diffuse;
-
-                    contribution += C_diffuse;
+                // exit the shade loop if something is already blocking the current light
+                if (blocking){
+                    break;
                 }
-            }   
-                // add current sphere's lighting to the total color
-                // throughput is from the PREVIOUS reflection
-                color += throughput * contribution;
+            }
 
-                // multiply by the current sphere's Kr
-                // how much of the next reflection is kept
-                throughput *= Kr;
+            // if nothing is blocking between light and sphere surface
+            // calculate contribution
+            if (blocking == false){
+                float d = length(shadow_ray);
+                float d_squared = d * d;
 
-                // calculate reflect ray direction
-                ray_d = reflect(ray_d, n);
+                float diffuse = max(0.0, dot(n,shadow_d));
 
-                // next ray origin is where the intersection is!
-                ray_o = p_intersect;
-    }   
-        // write final color after all bounces
-        image[tid] = float4(color, 1.0);
+                float3 C_diffuse = Kd * (I/d_squared) * diffuse;
+
+                contribution += C_diffuse;
+            }
+        }
+
+        // add current sphere's lighting to the total color
+        // throughput is from the PREVIOUS reflection
+        color += throughput * contribution;
+
+        // multiply by the current sphere's Kr
+        // how much of the next reflection is kept
+        throughput *= Kr;
+
+        // calculate reflect ray direction
+        ray_d = reflect(ray_d, n);
+
+        // next ray origin is where the intersection is!
+        ray_o = p_intersect;
+    }
+
+    // write final color after all bounces
+    image[tid] = float4(color, 1.0);
 }
