@@ -175,6 +175,7 @@ void detect_collision(uint tid : SV_DispatchThreadID,
                     ClosestPoint curr_closest = closest_point_triangle(position, p0, p1, p2);
 
                     //calculate distance from particle to closest point in tri
+                    // UNSIGNED SDF
                     float distance = length(position - curr_closest.position);
 
                     //update our minimal distance
