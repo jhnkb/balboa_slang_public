@@ -6,6 +6,7 @@ My own scene is located in scenes/hw4/sphere_pyramid.py.
 My HW 4 outputs are in outputs/hw4.
 should be a pyramid made up of six spheres with a cloth falling on top of it
 uv run python main.py 4_5 scenes/hw4/sphere_pyramid.py
+My custom scene's output is located in outputs/hw4/sphere_pyramid.mp4.
 
 LLM Usage Disclosure:
 
